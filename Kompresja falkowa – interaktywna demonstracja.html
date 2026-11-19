@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kompresja falkowa – interaktywna demonstracja</title>
+<style>
+:root{
+  --bg:#f6f5f1; --panel:#ffffff; --text:#1d1d1b; --muted:#6b6a64; --border:#dcdad2; --grid:#ebe9e2;
+  --sig:#a09d92; --c1:#2f6fdb; --c2:#d9480f; --c3:#2b9348; --ink:#1d1d1b; --inkText:#fff;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#151513;--panel:#1f1f1c;--text:#ecebe5;--muted:#9a988f;--border:#35342f;--grid:#2a2926;
+    --sig:#77756c;--c1:#6ea2ff;--c2:#ff7a3d;--c3:#5fd17e;--ink:#ecebe5;--inkText:#151513}
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:28px;margin:0 0 6px;letter-spacing:-.01em}
+.lead{color:var(--muted);margin:0 0 20px;max-width:720px}
+.tabs{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel);margin-bottom:14px}
+.tabs button{border:0;background:none;color:var(--text);padding:8px 18px;font:inherit;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--ink);color:var(--inkText)}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px 22px;align-items:end;margin-bottom:12px}
+.ctl{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.ctl b{color:var(--text);font-variant-numeric:tabular-nums}
+.ctl select,.ctl input[type=file]{font:inherit;font-size:14px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:6px 8px;width:100%}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.seg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;border-right:1px solid var(--border);background:var(--bg);color:var(--text);padding:6px 4px;font:inherit;font-size:13px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--inkText)}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
+.stat{padding:10px 14px}
+.stat small{display:block;color:var(--muted);font-size:12px}
+.stat strong{font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.stat span{color:var(--muted);font-size:12px;margin-left:4px}
+.plot{margin-bottom:12px}
+.plot h2{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.05em}
+canvas{display:block;width:100%}
+.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px}
+.grid4 .card{padding:10px}
+.grid4 canvas{aspect-ratio:1;image-rendering:pixelated;background:#000;border-radius:6px}
+.grid4 h2{font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.05em}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:12px}
+.explain{margin-top:20px;color:var(--muted);font-size:14px}
+.explain h3{color:var(--text);font-size:16px;margin:0 0 6px}
+.explain ol{padding-left:20px;margin:6px 0 10px}
+.explain li{margin-bottom:4px}
+.explain p{margin:6px 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Kompresja falkowa</h1>
+  <p class="lead">Rozłóż sygnał lub obraz na współczynniki falkowe, odrzuć te najmniejsze i zobacz, jak dobrze da się go odtworzyć z niewielkiej ich części.</p>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab1d" aria-selected="true">Sygnał 1D</button>
+    <button role="tab" id="tab2d" aria-selected="false">Obraz 2D</button>
+  </div>
+
+  <div class="card controls">
+    <label class="ctl"><span>Źródło danych</span><select id="src"></select></label>
+    <label class="ctl" id="fileWrap" hidden><span>Własny obraz (dowolny rozmiar)</span><input type="file" id="file" accept="image/*"></label>
+    <div class="ctl"><span>Falka</span><div class="seg" id="wavSeg"></div></div>
+    <label class="ctl"><span>Poziomy rozkładu: <b id="levOut"></b></span><input type="range" id="lev" min="1" max="5" step="1"></label>
+    <label class="ctl"><span>Zachowane współczynniki: <b id="keepOut"></b></span><input type="range" id="keep" min="0" max="300" step="1"></label>
+    <label class="check"><input type="checkbox" id="prot" checked> Nie obcinaj pasma aproksymacji (A)</label>
+  </div>
+
+  <div class="stats">
+    <div class="card stat"><small>Niezerowe współczynniki</small><strong id="stKept">–</strong><span id="stKeptSub"></span></div>
+    <div class="card stat"><small>Stopień kompresji</small><strong id="stRatio">–</strong><span>(bez kodowania)</span></div>
+    <div class="card stat"><small>PSNR rekonstrukcji</small><strong id="stPsnr">–</strong><span>dB</span></div>
+    <div class="card stat"><small>Błąd RMSE</small><strong id="stRmse">–</strong><span>% zakresu</span></div>
+  </div>
+
+  <div id="view1d">
+    <div class="card plot"><h2>Sygnał: oryginał i rekonstrukcja</h2><canvas id="cvSig"></canvas></div>
+    <div class="card plot"><h2>Współczynniki falkowe (kolory = skale, blade = odrzucone)</h2><canvas id="cvCoef"></canvas></div>
+  </div>
+
+  <div id="view2d" hidden>
+    <div class="grid4">
+      <div class="card"><h2>Oryginał</h2><canvas id="cvOrig" width="256" height="256"></canvas></div>
+      <div class="card"><h2>Współczynniki (po obcięciu)</h2><canvas id="cvCoef2" width="256" height="256"></canvas></div>
+      <div class="card"><h2>Rekonstrukcja</h2><canvas id="cvRec" width="256" height="256"></canvas></div>
+      <div class="card"><h2>Błąd (×4)</h2><canvas id="cvErr" width="256" height="256"></canvas></div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="card plot" style="margin:0"><h2>Funkcje falki: skalująca φ i falka ψ</h2><canvas id="cvShape"></canvas></div>
+    <div class="card plot" style="margin:0"><h2>PSNR a odsetek zachowanych współczynników</h2><canvas id="cvCurve"></canvas></div>
+  </div>
+
+  <section class="explain">
+    <h3>Jak to działa</h3>
+    <ol>
+      <li><b>Transformata falkowa</b> dzieli dane na „średnie” (pasmo A) i „szczegóły” (pasma D1…Dn) w kolejnych skalach. Dla obrazów robi się to osobno po wierszach i kolumnach.</li>
+      <li><b>Obcięcie</b>: większość współczynników szczegółów jest bliska zeru, więc zostawiamy tylko największe co do modułu, a resztę zerujemy.</li>
+      <li><b>Transformata odwrotna</b> składa dane z pozostałych współczynników. Użyte falki są ortogonalne, więc zgodnie z twierdzeniem Parsevala błąd wynika wprost z energii odrzuconych współczynników. Na tym opiera się wykres PSNR.</li>
+    </ol>
+    <p>To uproszczony model: bez kwantyzacji i kodowania entropijnego (JPEG 2000 używa do tego EBCOT), a stopień kompresji to liczba wszystkich współczynników podzielona przez niezerowe, bez kosztu zapisu ich pozycji. Brzegi traktowane są okresowo, więc przy mocnej kompresji mogą pojawić się artefakty na krawędziach.</p>
+  </section>
+</main>
+
+<script>
+//<core>
+const SQ3 = Math.sqrt(3);
+const WAVELETS = [
+  {id:'haar', name:'Haar', h:[Math.SQRT1_2, Math.SQRT1_2]},
+  {id:'db2', name:'Daubechies 4', h:[(1+SQ3)/(4*Math.SQRT2),(3+SQ3)/(4*Math.SQRT2),(3-SQ3)/(4*Math.SQRT2),(1-SQ3)/(4*Math.SQRT2)]},
+  {id:'db4', name:'Daubechies 8', h:[0.2303778133088964,0.7148465705529154,0.6308807679298587,-0.02798376941685985,-0.18703481171888114,0.030841381835986965,0.032883011666982945,-0.010597401784997278]}
+];
+WAVELETS.forEach(w => { const L = w.h.length; w.g = w.h.map((_, k) => (k % 2 ? -1 : 1) * w.h[L-1-k]); });
+
+const TMP = new Float64Array(1024);
+function fwdStep(x, off, stride, n, h, g){
+  const L = h.length, half = n >> 1;
+  for (let i = 0; i < half; i++){
+    let a = 0, d = 0;
+    for (let k = 0; k < L; k++){ const v = x[off + ((2*i + k) % n) * stride]; a += h[k]*v; d += g[k]*v; }
+    TMP[i] = a; TMP[half + i] = d;
+  }
+  for (let i = 0; i < n; i++) x[off + i*stride] = TMP[i];
+}
+function invStep(x, off, stride, n, h, g){
+  const L = h.length, half = n >> 1;
+  for (let i = 0; i < n; i++) TMP[i] = 0;
+  for (let i = 0; i < half; i++){
+    const a = x[off + i*stride], d = x[off + (half + i)*stride];
+    for (let k = 0; k < L; k++) TMP[(2*i + k) % n] += h[k]*a + g[k]*d;
+  }
+  for (let i = 0; i < n; i++) x[off + i*stride] = TMP[i];
+}
+function dwt1(sig, w, J){
+  const x = Float64Array.from(sig), N = x.length;
+  for (let l = 0; l < J; l++) fwdStep(x, 0, 1, N >> l, w.h, w.g);
+  return x;
+}
+function idwt1(c, w, J){
+  const x = Float64Array.from(c), N = x.length;
+  for (let l = J - 1; l >= 0; l--) invStep(x, 0, 1, N >> l, w.h, w.g);
+  return x;
+}
+function dwt2(img, N, w, J){
+  const x = Float64Array.from(img);
+  for (let l = 0; l < J; l++){
+    const n = N >> l;
+    for (let r = 0; r < n; r++) fwdStep(x, r*N, 1, n, w.h, w.g);
+    for (let c = 0; c < n; c++) fwdStep(x, c, N, n, w.h, w.g);
+  }
+  return x;
+}
+function idwt2(co, N, w, J){
+  const x = Float64Array.from(co);
+  for (let l = J - 1; l >= 0; l--){
+    const n = N >> l;
+    for (let c = 0; c < n; c++) invStep(x, c, N, n, w.h, w.g);
+    for (let r = 0; r < n; r++) invStep(x, r*N, 1, n, w.h, w.g);
+  }
+  return x;
+}
+//</core>
+
+(() => {
+const $ = s => document.querySelector(s);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const WCOL = {haar:'--c1', db2:'--c2', db4:'--c3'};
+
+/* ---------- dane testowe ---------- */
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function gauss(r){return Math.sqrt(-2*Math.log(r()+1e-12))*Math.cos(2*Math.PI*r())}
+function normalize(a){let lo=Infinity,hi=-Infinity;for(const v of a){if(v<lo)lo=v;if(v>hi)hi=v}const s=hi-lo||1;return Float64Array.from(a,v=>(v-lo)/s)}
+const bump = (p, c, s) => Math.exp(-(((p - c) / s) ** 2));
+
+const SIGNALS = {
+  chirp:{label:'Chirp + impuls + skok', gen(N){
+    const a = new Float64Array(N);
+    for (let i = 0; i < N; i++){ const t = i/N;
+      a[i] = 0.5*Math.sin(2*Math.PI*(3*t + 40*t*t)) + (t > .55 && t < .7 ? .8 : 0) + 1.5*bump(t,.3,.004); }
+    return a; }},
+  ecg:{label:'Sygnał podobny do EKG', gen(N){
+    const r = rng(7), a = new Float64Array(N);
+    for (let i = 0; i < N; i++){ const p = (i/N*3) % 1;
+      a[i] = .15*bump(p,.15,.04) - .12*bump(p,.3,.012) + bump(p,.33,.012) - .25*bump(p,.36,.014) + .3*bump(p,.6,.06) + .008*gauss(r); }
+    return a; }},
+  steps:{label:'Schodki + sinus', gen(N){
+    const lv = [.2,.8,.5,.9,.1,.6,.3], cut = [0,.12,.3,.41,.62,.7,.86,1], a = new Float64Array(N);
+    for (let i = 0; i < N; i++){ const t = i/N; let k = 0; while (t >= cut[k+1]) k++;
+      a[i] = lv[k] + .06*Math.sin(2*Math.PI*12*t); }
+    return a; }},
+  noisy:{label:'Zaszumiony sinus (kompresja odszumia)', gen(N){
+    const r = rng(3), a = new Float64Array(N);
+    for (let i = 0; i < N; i++){ const t = i/N;
+      a[i] = .5*Math.sin(2*Math.PI*4*t) + .3*Math.sin(2*Math.PI*9*t) + .22*gauss(r); }
+    return a; }}
+};
+Object.values(SIGNALS).forEach(s => { s.data = null; });
+
+function toGray(cv){
+  const d = cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data, out = new Float64Array(cv.width*cv.height);
+  for (let i = 0; i < out.length; i++) out[i] = (0.299*d[4*i] + 0.587*d[4*i+1] + 0.114*d[4*i+2]) / 255;
+  return out;
+}
+const IMAGES = {
+  shapes:{label:'Kształty i napis', gen(){
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256; const g = cv.getContext('2d');
+    const gr = g.createLinearGradient(0,0,256,256); gr.addColorStop(0,'#2a2a2a'); gr.addColorStop(1,'#c8c8c8');
+    g.fillStyle = gr; g.fillRect(0,0,256,256);
+    g.fillStyle = '#f4f4f4'; g.beginPath(); g.arc(85,90,52,0,7); g.fill();
+    g.fillStyle = '#111'; g.beginPath(); g.arc(85,90,22,0,7); g.fill();
+    g.save(); g.translate(185,85); g.rotate(.5); g.fillStyle = '#888'; g.fillRect(-38,-38,76,76); g.restore();
+    g.strokeStyle = '#fff'; g.lineWidth = 2;
+    for (let i = 0; i < 9; i++){ g.beginPath(); g.moveTo(12+i*7,150); g.lineTo(12+i*7,185); g.stroke(); }
+    g.font = 'bold 54px system-ui, sans-serif'; g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 3;
+    g.strokeText('FALKA',58,236); g.fillText('FALKA',58,236);
+    return toGray(cv); }},
+  texture:{label:'Tekstury i szum', gen(){
+    const N = 256, a = new Float64Array(N*N), r = rng(11);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++){
+      let v = .5 + .22*Math.sin(x/9) + .16*Math.sin((x+y)/23) + .25*Math.exp(-(((x-70)**2+(y-170)**2)/1800));
+      if (x > 150 && y < 110) v = .5 + .22*gauss(r);
+      if (Math.abs(x - y - 40) < 3) v = 1;
+      if (y > 200 && ((x >> 3) + (y >> 3)) % 2) v *= .45;
+      a[y*N+x] = Math.min(1, Math.max(0, v)); }
+    return a; }}
+};
+Object.values(IMAGES).forEach(s => { s.data = null; });
+
+/* ---------- stan ---------- */
+const S = {mode:'1d', wav:'db2', levels:{'1d':5,'2d':4}, keep:170, protect:true,
+  src:{'1d':'chirp','2d':'shapes'}, upload:null, uploadName:'', dataVer:0, cache:null};
+const NOF = m => m === '1d' ? 512 : 256;
+const maxLevels = m => Math.floor(Math.log2(NOF(m)/8));
+const keepPct = () => Math.pow(10, S.keep/100 - 1);
+
+function getData(){
+  const m = S.mode, s = S.src[m];
+  if (m === '1d') return SIGNALS[s].data || (SIGNALS[s].data = normalize(SIGNALS[s].gen(512)));
+  if (s === 'upload' && S.upload) return S.upload;
+  return IMAGES[s].data || (IMAGES[s].data = IMAGES[s].gen());
+}
+
+/* ---------- wpisy cache: współczynniki + posortowane moduły ---------- */
+function makeEntry(x, N, dim, w, J, protect){
+  const c = dim === 1 ? dwt1(x, w, J) : dwt2(x, N, w, J);
+  const total = c.length, A = N >> J, prot = new Uint8Array(total);
+  let nProt = 0, maxD = 0;
+  for (let i = 0; i < total; i++){
+    const isA = dim === 1 ? i < A : ((i / N | 0) < A && (i % N) < A);
+    if (isA && protect){ prot[i] = 1; nProt++; }
+    if (!isA){ const v = Math.abs(c[i]); if (v > maxD) maxD = v; }
+  }
+  const mags = new Float64Array(total - nProt); let m = 0, eProt = 0;
+  for (let i = 0; i < total; i++){ if (prot[i]) eProt += c[i]*c[i]; else mags[m++] = Math.abs(c[i]); }
+  mags.sort();
+  const cum = new Float64Array(mags.length + 1);
+  for (let i = 0; i < mags.length; i++) cum[i+1] = cum[i] + mags[i]*mags[i];
+  return {c, prot, nProt, mags, cum, total, maxD, energy: eProt + cum[mags.length]};
+}
+function thrFor(e, frac){
+  const len = e.mags.length;
+  const keepFree = Math.min(len, Math.max(0, Math.round(frac*e.total) - e.nProt));
+  return {thr: keepFree === 0 ? Infinity : e.mags[len - keepFree], disc: e.cum[len - keepFree]};
+}
+function ensureCache(){
+  const m = S.mode, J = S.levels[m], key = [m, S.src[m], S.dataVer, J, S.protect].join('|');
+  if (S.cache && S.cache.key === key) return S.cache;
+  const x = getData(), N = NOF(m), dim = m === '1d' ? 1 : 2, per = {};
+  WAVELETS.forEach(w => { per[w.id] = makeEntry(x, N, dim, w, J, S.protect); });
+  return S.cache = {key, per};
+}
+const psnrFromMse = mse => mse <= 1e-14 ? Infinity : 10*Math.log10(1/mse);
+
+/* ---------- rysowanie ---------- */
+function fit(cv, h){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.max(120, Math.round(cv.clientWidth));
+  cv.width = w*dpr; cv.height = h*dpr; cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx, w, h};
+}
+const FONT = '11px system-ui, sans-serif';
+function legend(ctx, x, y, items){
+  ctx.font = FONT; ctx.textBaseline = 'middle';
+  for (const [col, txt] of items){
+    ctx.fillStyle = col; ctx.fillRect(x, y-2, 14, 4);
+    ctx.fillStyle = css('--muted'); ctx.fillText(txt, x+19, y); x += 19 + ctx.measureText(txt).width + 16;
+  }
+}
+function drawSignal(cv, orig, rec, col){
+  const {ctx, w, h} = fit(cv, 230), L = 40, R = 12, T = 22, B = 22, pw = w-L-R, ph = h-T-B;
+  let lo = Infinity, hi = -Infinity;
+  for (const a of [orig, rec]) for (const v of a){ if (v < lo) lo = v; if (v > hi) hi = v; }
+  const pad = (hi-lo)*.06; lo -= pad; hi += pad;
+  const X = i => L + i/(orig.length-1)*pw, Y = v => T + (1-(v-lo)/(hi-lo))*ph;
+  ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  for (let k = 0; k <= 4; k++){
+    const v = lo + (hi-lo)*k/4, y = Y(v);
+    ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L,y); ctx.lineTo(w-R,y); ctx.stroke();
+    ctx.fillStyle = css('--muted'); ctx.fillText(v.toFixed(2), L-6, y);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = css('--muted');
+  [0, .5, 1].forEach(f => ctx.fillText(String(Math.round(f*orig.length)), L + f*pw, h-B+6));
+  const path = (a, c, lw) => { ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.beginPath();
+    for (let i = 0; i < a.length; i++) i ? ctx.lineTo(X(i), Y(a[i])) : ctx.moveTo(X(i), Y(a[i])); ctx.stroke(); };
+  path(orig, css('--sig'), 1.6); path(rec, col, 2);
+  ctx.textAlign = 'left'; legend(ctx, L, 10, [[css('--sig'), 'oryginał'], [col, 'rekonstrukcja']]);
+}
+function bandOf(i, N, J){ if (i < N >> J) return 0; for (let j = 1; j <= J; j++) if (i >= N >> j) return j; return J; }
+function drawCoefs1d(cv, e, out, N, J){
+  const {ctx, w, h} = fit(cv, 200), L = 40, R = 12, T = 20, B = 8, pw = w-L-R, ph = h-T-B, mid = T + ph/2;
+  let mx = 0; for (const v of e.c) mx = Math.max(mx, Math.abs(v)); mx = mx || 1;
+  ctx.font = FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.strokeStyle = css('--grid'); ctx.beginPath(); ctx.moveTo(L,mid); ctx.lineTo(w-R,mid); ctx.stroke();
+  // granice pasm
+  for (let j = J; j >= 0; j--){
+    const a = j === 0 ? 0 : N >> j, b = j === 0 ? N >> J : N >> (j-1);
+    if (j > 0 || true){ const xa = L + a/N*pw, xb = L + b/N*pw;
+      if (j < J + 1){ ctx.strokeStyle = css('--border'); ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(xa,T); ctx.lineTo(xa,h-B); ctx.stroke(); ctx.setLineDash([]); }
+      if (xb - xa > 15){ ctx.fillStyle = css('--muted'); ctx.fillText(j === 0 ? 'A' : 'D' + j, (xa+xb)/2, 9); } }
+  }
+  const bandCol = j => j === 0 ? css('--text') : `hsl(${20 + (j-1)*45},65%,50%)`;
+  const half = ph/2 - 2;
+  for (const pass of [0, 1]){
+    for (let i = 0; i < N; i++){
+      const kept = out[i] !== 0 || e.c[i] === 0; if ((pass === 1) !== kept) continue;
+      const x = L + (i+.5)/N*pw, y = mid - e.c[i]/mx*half;
+      ctx.strokeStyle = pass ? bandCol(bandOf(i, N, J)) : css('--grid'); ctx.lineWidth = Math.max(1, pw/N*.8);
+      ctx.beginPath(); ctx.moveTo(x, mid); ctx.lineTo(x, y); ctx.stroke();
+    }
+  }
+}
+const shapeCache = {};
+function shapesOf(w){
+  if (shapeCache[w.id]) return shapeCache[w.id];
+  const N = 1024, J = 5, a = new Float64Array(N), b = new Float64Array(N); a[16] = 1; b[48] = 1;
+  const cut = v => { let m = 0; for (const t of v) m = Math.max(m, Math.abs(t));
+    let s = 0, e = v.length-1; while (Math.abs(v[s]) < .002*m) s++; while (Math.abs(v[e]) < .002*m) e--;
+    const mg = Math.max(2, Math.round((e-s)*.1)); return Array.from(v.slice(Math.max(0,s-mg), Math.min(v.length, e+mg+1)), t => t/m); };
+  return shapeCache[w.id] = {phi: cut(idwt1(a, w, J)), psi: cut(idwt1(b, w, J))};
+}
+function drawShapes(cv, w){
+  const {ctx, w:W, h} = fit(cv, 200), sh = shapesOf(w), col = css(WCOL[w.id]);
+  const half = W/2;
+  [['φ (skalująca)', sh.phi, 0], ['ψ (falka)', sh.psi, half]].forEach(([t, d, ox]) => {
+    const L = ox + 12, pw = half - 24, T = 26, ph = h - T - 12, mid = T + ph/2;
+    ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(L, mid); ctx.lineTo(L+pw, mid); ctx.stroke();
+    ctx.font = FONT; ctx.fillStyle = css('--muted'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(t, L, 10);
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath();
+    d.forEach((v, i) => { const x = L + i/(d.length-1)*pw, y = mid - v*ph/2*.92; i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+    ctx.stroke();
+  });
+}
+function drawCurve(cv, cache, curId, frac){
+  const {ctx, w, h} = fit(cv, 200), L = 40, R = 12, T = 24, B = 24, pw = w-L-R, ph = h-T-B, YMAX = 80;
+  const P = 48, fr = Array.from({length:P}, (_, i) => Math.pow(10, -1 + 3*i/(P-1)) / 100);
+  const curves = WAVELETS.map(wv => { const e = cache.per[wv.id];
+    return {wv, pts: fr.map(f => Math.min(YMAX, psnrFromMse(thrFor(e, f).disc / e.total))), e}; });
+  let lo = Infinity; curves.forEach(c => c.pts.forEach(v => { lo = Math.min(lo, v); }));
+  const YMIN = Math.max(0, Math.floor((lo-1)/10)*10);
+  const X = p => L + (Math.log10(p)+1)/3*pw, Y = v => T + (1-(v-YMIN)/(YMAX-YMIN))*ph;
+  ctx.font = FONT; ctx.textBaseline = 'middle';
+  for (let v = YMIN; v <= YMAX; v += 10){
+    ctx.strokeStyle = css('--grid'); ctx.beginPath(); ctx.moveTo(L,Y(v)); ctx.lineTo(w-R,Y(v)); ctx.stroke();
+    ctx.fillStyle = css('--muted'); ctx.textAlign = 'right'; ctx.fillText(v, L-6, Y(v));
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  [[.1,'0,1%'],[1,'1%'],[10,'10%'],[100,'100%']].forEach(([p,t]) => { ctx.fillStyle = css('--muted'); ctx.fillText(t, X(p), h-B+6); });
+  curves.forEach(c => { const cur = c.wv.id === curId;
+    ctx.strokeStyle = css(WCOL[c.wv.id]); ctx.lineWidth = cur ? 2.6 : 1.4; ctx.globalAlpha = cur ? 1 : .6; ctx.beginPath();
+    c.pts.forEach((v, i) => { const x = X(fr[i]*100), y = Y(v); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); }); ctx.stroke(); ctx.globalAlpha = 1; });
+  const px = X(frac*100); ctx.strokeStyle = css('--muted'); ctx.setLineDash([4,3]); ctx.beginPath(); ctx.moveTo(px,T); ctx.lineTo(px,h-B); ctx.stroke(); ctx.setLineDash([]);
+  const cc = curves.find(c => c.wv.id === curId), y0 = Math.min(YMAX, psnrFromMse(thrFor(cc.e, frac).disc / cc.e.total));
+  ctx.fillStyle = css(WCOL[curId]); ctx.beginPath(); ctx.arc(px, Y(y0), 5, 0, 7); ctx.fill();
+  ctx.textAlign = 'left'; legend(ctx, L, 10, WAVELETS.map(wv => [css(WCOL[wv.id]), wv.name]));
+}
+function drawImages(x, e, out, rec, N, J){
+  const put = (id, fn) => { const cv = $(id), img = new ImageData(N, N);
+    for (let i = 0; i < N*N; i++){ const g = Math.max(0, Math.min(255, fn(i)*255 + .5)) | 0; img.data[4*i] = img.data[4*i+1] = img.data[4*i+2] = g; img.data[4*i+3] = 255; }
+    cv.getContext('2d').putImageData(img, 0, 0); };
+  const A = N >> J, k = 60, den = Math.log1p(e.maxD*k) || 1, sc = 1/Math.pow(2, J);
+  put('#cvOrig', i => x[i]);
+  put('#cvRec', i => rec[i]);
+  put('#cvErr', i => Math.abs(x[i] - rec[i])*4);
+  put('#cvCoef2', i => { const r = i / N | 0, c = i % N, v = out[i];
+    return (r < A && c < A) ? v*sc : Math.log1p(Math.abs(v)*k)/den; });
+}
+
+/* ---------- aktualizacja ---------- */
+let pending = false;
+function schedule(){ if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; update(); }); }
+function fmtPct(f){ return f.toFixed(f < 1 ? 2 : f < 10 ? 1 : 0) + ' %'; }
+function update(){
+  const m = S.mode, N = NOF(m), dim = m === '1d' ? 1 : 2, J = S.levels[m];
+  const cache = ensureCache(), w = WAVELETS.find(v => v.id === S.wav), e = cache.per[w.id], x = getData();
+  const pct = keepPct(), frac = pct/100, {thr} = thrFor(e, frac);
+  const out = new Float64Array(e.total); let nz = 0;
+  for (let i = 0; i < e.total; i++){ const v = e.c[i];
+    if (e.prot[i] || Math.abs(v) >= thr){ out[i] = v; if (Math.abs(v) > 1e-12) nz++; } }
+  let rec = dim === 1 ? idwt1(out, w, J) : idwt2(out, N, w, J);
+  if (dim === 2) for (let i = 0; i < rec.length; i++) rec[i] = rec[i] < 0 ? 0 : rec[i] > 1 ? 1 : rec[i];
+  let se = 0; for (let i = 0; i < x.length; i++){ const d = x[i] - rec[i]; se += d*d; }
+  const mse = se / x.length, ps = psnrFromMse(mse);
+
+  $('#levOut').textContent = J; $('#keepOut').textContent = fmtPct(pct);
+  $('#stKept').textContent = nz.toLocaleString('pl-PL'); $('#stKeptSub').textContent = '/ ' + e.total.toLocaleString('pl-PL') + ' (' + fmtPct(nz/e.total*100) + ')';
+  $('#stRatio').textContent = nz ? (e.total/nz).toFixed(e.total/nz < 10 ? 1 : 0) + ' : 1' : '∞';
+  $('#stPsnr').textContent = isFinite(ps) ? ps.toFixed(1) : '∞';
+  $('#stRmse').textContent = (Math.sqrt(mse)*100).toFixed(2);
+
+  const col = css(WCOL[w.id]);
+  if (dim === 1){ drawSignal($('#cvSig'), x, rec, col); drawCoefs1d($('#cvCoef'), e, out, N, J); }
+  else drawImages(x, e, out, rec, N, J);
+  drawShapes($('#cvShape'), w); drawCurve($('#cvCurve'), cache, w.id, frac);
+}
+
+/* ---------- UI ---------- */
+function fillSources(){
+  const m = S.mode, sel = $('#src'), set = m === '1d' ? SIGNALS : IMAGES; sel.innerHTML = '';
+  for (const [id, v] of Object.entries(set)) sel.add(new Option(v.label, id));
+  if (m === '2d' && S.upload) sel.add(new Option('Własny: ' + S.uploadName, 'upload'));
+  sel.value = S.src[m];
+}
+function syncLevels(){ const m = S.mode, el = $('#lev'); el.max = maxLevels(m); S.levels[m] = Math.min(S.levels[m], maxLevels(m)); el.value = S.levels[m]; }
+function setMode(m){
+  S.mode = m;
+  $('#tab1d').setAttribute('aria-selected', m === '1d'); $('#tab2d').setAttribute('aria-selected', m === '2d');
+  $('#view1d').hidden = m !== '1d'; $('#view2d').hidden = m !== '2d'; $('#fileWrap').hidden = m !== '2d';
+  fillSources(); syncLevels(); update();
+}
+$('#tab1d').onclick = () => setMode('1d'); $('#tab2d').onclick = () => setMode('2d');
+$('#src').onchange = e => { S.src[S.mode] = e.target.value; update(); };
+$('#lev').oninput = e => { S.levels[S.mode] = +e.target.value; schedule(); };
+$('#keep').oninput = e => { S.keep = +e.target.value; schedule(); };
+$('#prot').onchange = e => { S.protect = e.target.checked; update(); };
+const seg = $('#wavSeg');
+WAVELETS.forEach(w => { const b = document.createElement('button'); b.textContent = w.name; b.dataset.id = w.id;
+  b.onclick = () => { S.wav = w.id; [...seg.children].forEach(c => c.setAttribute('aria-pressed', c.dataset.id === w.id)); update(); }; seg.appendChild(b); });
+[...seg.children].forEach(c => c.setAttribute('aria-pressed', c.dataset.id === S.wav));
+$('#file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => { const im = new Image(); im.onload = () => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256; const g = cv.getContext('2d');
+    const s = Math.min(im.width, im.height), sx = (im.width - s)/2, sy = (im.height - s)/2;
+    g.drawImage(im, sx, sy, s, s, 0, 0, 256, 256);
+    S.upload = toGray(cv); S.uploadName = f.name.length > 22 ? f.name.slice(0, 20) + '…' : f.name; S.dataVer++;
+    S.src['2d'] = 'upload'; fillSources(); update(); };
+    im.src = fr.result; };
+  fr.readAsDataURL(f);
+};
+$('#keep').value = S.keep;
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(update, 120); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', update);
+setMode('1d');
+})();
+</script>
+</body>
+</html>
